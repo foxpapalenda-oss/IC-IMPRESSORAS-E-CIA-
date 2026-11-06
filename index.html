@@ -6,7 +6,12 @@
   <title>IC Impressoras & Cia | Assistência, tintas e informática</title>
   <meta name="description" content="Venda de impressoras, assistência técnica, tintas, suprimentos e acessórios de informática na IC Impressoras & Cia.">
   <link rel="stylesheet" href="styles.css">
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js" defer></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
   <script src="script.js" defer></script>
+  <script src="firebase-sync.js" defer></script>
 </head>
 <body>
   <div class="topbar">
@@ -31,7 +36,7 @@
         <a href="#produtos"><span class="nav-icon" aria-hidden="true">▤</span>Produtos</a>
         <a href="#contato"><span class="nav-icon" aria-hidden="true">◉</span>Contato</a>
       </nav>
-      <a class="header-cta" href="https://wa.me/5599984805415" target="_blank" rel="noopener noreferrer">Fale com a loja <span>→</span></a>
+      <a class="header-cta" href="#assistencia">Entrar na conta <span>→</span></a>
       <div class="sidebar-foot">ASSISTÊNCIA · SUPRIMENTOS · INFORMÁTICA</div>
     </div>
   </aside>
@@ -99,9 +104,35 @@
         <section class="printer-form-panel" aria-labelledby="printer-form-title">
           <div class="printer-form-heading">
             <div><span class="kicker">FICHA DE RESET</span><h2 id="printer-form-title">Novo atendimento</h2></div>
-            <span class="form-state"><i></i> EDIÇÃO LOCAL</span>
+            <span class="form-state"><i></i> NUVEM + CÓPIA LOCAL</span>
           </div>
-          <form id="printer-form">
+          <section class="cloud-auth-panel" aria-labelledby="cloud-auth-title">
+            <div id="cloud-login-state">
+              <h3 id="cloud-auth-title">Entrar na conta</h3>
+              <p>Acesse ou crie sua conta para ver as fichas sincronizadas.</p>
+              <form id="cloud-login-form">
+                <label for="cloud-email">E-mail<input id="cloud-email" type="email" autocomplete="username" required></label>
+                <label for="cloud-password">Senha<input id="cloud-password" type="password" autocomplete="current-password" minlength="6" required></label>
+                <label class="cloud-remember-option" for="cloud-remember-me">
+                  <input id="cloud-remember-me" type="checkbox">
+                  <span>Mantenha-me conectado</span>
+                </label>
+                <div class="cloud-auth-actions">
+                  <button class="btn btn-yellow" type="submit">Entrar</button>
+                  <button class="btn btn-outline" type="button" id="cloud-create-account">Criar nova conta</button>
+                </div>
+              </form>
+            </div>
+            <div id="cloud-session-state" hidden>
+              <p id="cloud-session-message" role="status" aria-live="polite"></p>
+              <div class="cloud-auth-actions">
+                <button class="btn btn-outline" type="button" id="cloud-resend-verification" hidden>Reenviar verificação</button>
+                <button class="btn btn-outline" type="button" id="cloud-sign-out">Sair</button>
+              </div>
+            </div>
+            <p class="form-feedback" id="cloud-auth-feedback" role="status" aria-live="polite"></p>
+          </section>
+          <form id="printer-form" hidden>
             <details class="form-accordion data-accordion" open>
               <summary class="form-accordion-summary">
                 <span class="accordion-index">01</span>
@@ -144,13 +175,13 @@
               <summary class="form-accordion-summary">
                 <span class="accordion-index">02</span>
                 <span class="accordion-summary-copy"><strong id="procedure-checklist-title">Procedimentos</strong><small>Marque os serviços executados e suas opções</small></span>
-                <span class="accordion-summary-meta" id="procedure-total-count">0 de 17</span>
+                <span class="accordion-summary-meta" id="procedure-total-count">0 de 18</span>
                 <span class="accordion-chevron" aria-hidden="true"></span>
               </summary>
               <div class="form-accordion-content procedure-accordion-content">
                 <div class="procedure-total-status">
                   <span>Conclusão geral</span>
-                  <div class="procedure-progress-track" role="progressbar" aria-label="Progresso geral dos procedimentos" aria-valuemin="0" aria-valuemax="17" aria-valuenow="0">
+                  <div class="procedure-progress-track" role="progressbar" aria-label="Progresso geral dos procedimentos" aria-valuemin="0" aria-valuemax="18" aria-valuenow="0">
                     <span class="procedure-progress-fill" id="procedure-total-progress"></span>
                   </div>
                 </div>
@@ -161,7 +192,7 @@
               <summary class="form-accordion-summary">
                 <span class="accordion-index">03</span>
                 <span class="accordion-summary-copy"><strong>Fotos</strong><small>Adicione evidências do atendimento</small></span>
-                <span class="accordion-summary-meta">3 tipos</span>
+                <span class="accordion-summary-meta">4 tipos</span>
                 <span class="accordion-chevron" aria-hidden="true"></span>
               </summary>
               <div class="form-accordion-content">
@@ -187,6 +218,13 @@
                     </label>
                     <div class="test-page-preview" id="printer-reset-preview" hidden><img id="printer-reset-image" alt="Prévia da foto do reset da impressora"><button type="button" id="remove-printer-reset">Remover foto</button></div>
                   </div>
+                  <div class="photo-upload-card">
+                    <div class="photo-upload-card-heading"><span class="photo-upload-number">04</span><div><strong>Limpeza da máquina</strong><small>Registre a condição ao chegar</small></div></div>
+                    <label class="upload-area" for="machine-cleaning-photo-upload">
+                      <input id="machine-cleaning-photo-upload" type="file" accept="image/*"><span class="upload-icon" aria-hidden="true">↑</span><strong>Enviar foto</strong><small>Imagem de até 10 MB</small>
+                    </label>
+                    <div class="test-page-preview" id="machine-cleaning-photo-preview" hidden><img id="machine-cleaning-photo-image" alt="Prévia da foto da impressora antes da limpeza"><button type="button" id="remove-machine-cleaning-photo">Remover foto</button></div>
+                  </div>
                 </div>
               </div>
             </details>
@@ -194,15 +232,19 @@
             <div class="printer-form-actions"><button class="btn btn-outline" type="button" data-cancel-edit hidden>Cancelar edição</button><button class="btn btn-yellow" type="submit">Salvar procedimento</button></div>
           </form>
         </section>
-        <section class="saved-printers" aria-labelledby="saved-printers-title">
+        <section class="saved-printers" aria-labelledby="saved-printers-title" hidden>
           <div class="saved-printers-heading">
             <div><span class="kicker">HISTÓRICO TÉCNICO</span><h2 id="saved-printers-title">Procedimentos salvos</h2></div>
-            <span id="saved-printer-count">0 registros</span>
+            <div class="saved-printers-controls">
+              <span id="saved-printer-count">0 registros</span>
+              <button class="saved-printer-edit saved-printer-pdf" id="import-record-pdf" type="button">Importar ficha PDF</button>
+              <input id="import-record-pdf-file" type="file" accept="application/pdf,.pdf" hidden>
+            </div>
           </div>
           <div class="saved-printer-grid" id="saved-printer-list"></div>
           <p class="saved-printer-empty" id="saved-printer-empty">Os procedimentos salvos aparecerão aqui.</p>
         </section>
-        <p class="assistance-note">Procedimentos e imagens ficam salvos neste navegador e neste endereço do site. Use sempre o mesmo endereço para acessar seu histórico.</p>
+        <p class="assistance-note">As fichas e fotos são sincronizadas pela nuvem e também ficam guardadas neste navegador. Entre com a mesma conta autorizada em cada celular.</p>
       </div>
     </section>
     <section class="products" id="produtos">
@@ -234,6 +276,7 @@
     <div class="detail-test-page" id="detail-printer-photo" hidden><h3>Foto da impressora</h3><img id="detail-printer-photo-image" alt="Foto da impressora cadastrada"></div>
     <div class="detail-test-page" id="detail-test-page" hidden><h3>Página de teste</h3><img id="detail-test-page-image" alt="Imagem da página de teste"></div>
     <div class="detail-test-page" id="detail-reset-photo" hidden><h3>Reset da impressora</h3><img id="detail-printer-reset-image" alt="Foto do reset da impressora"></div>
+    <div class="detail-test-page" id="detail-machine-cleaning-photo" hidden><h3>Condição da máquina ao chegar</h3><img id="detail-machine-cleaning-photo-image" alt="Foto da impressora antes da limpeza"></div>
     <button class="btn btn-outline detail-close-button" type="button" data-close-details>Fechar</button>
   </dialog>
   <dialog class="photo-viewer-dialog" id="photo-viewer-dialog" aria-labelledby="photo-viewer-title">

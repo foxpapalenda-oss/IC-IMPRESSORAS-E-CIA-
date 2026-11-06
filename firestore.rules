@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function authorized() {
+      return request.auth != null
+        && request.auth.token.email == 'ssllfelipe@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function ownsRecord(recordId) {
+      return authorized()
+        && get(/databases/$(database)/documents/printerRecords/$(recordId)).data.ownerEmail
+          == request.auth.token.email;
+    }
+
+    match /printerRecords/{recordId} {
+      allow get, list: if authorized()
+        && resource.data.ownerEmail == request.auth.token.email;
+      allow create, update: if authorized()
+        && request.resource.data.ownerEmail == request.auth.token.email
+        && request.resource.data.record.id == recordId
+        && request.resource.data.record.ownerEmail == request.auth.token.email
+        && request.resource.data.ready is bool
+        && request.resource.data.keys().hasOnly(['ownerEmail', 'record', 'ready', 'updatedAt']);
+      allow delete: if authorized()
+        && resource.data.ownerEmail == request.auth.token.email;
+
+      match /photos/{photoId} {
+        allow get, list: if ownsRecord(recordId);
+        allow create, update: if ownsRecord(recordId)
+          && request.resource.data.ownerEmail == request.auth.token.email
+          && request.resource.data.contentType == 'image/jpeg'
+          && request.resource.data.dataUrl is string
+          && request.resource.data.dataUrl.size() <= 850000
+          && request.resource.data.keys().hasOnly(['ownerEmail', 'dataUrl', 'contentType', 'updatedAt'])
+          && photoId in ['printer-photo', 'test-page', 'printer-reset', 'machine-cleaning-photo'];
+        allow delete: if ownsRecord(recordId)
+          && photoId in ['printer-photo', 'test-page', 'printer-reset', 'machine-cleaning-photo'];
+      }
+    }
+  }
+}

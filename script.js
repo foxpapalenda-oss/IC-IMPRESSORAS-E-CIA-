@@ -258,12 +258,16 @@ if (menuToggle && siteSidebar && sidebarBackdrop) {
 
 const printerProcedureDefinitions = [
   { key: "limpeza-maquina", label: "Limpeza da máquina", group: "Manutenção e reset" },
-  { key: "procedimento-cabecote", label: "Procedimento do cabeçote", group: "Manutenção e reset" },
+  { key: "procedimento-cabecote", label: "Limpeza do cabeçote", group: "Manutenção e reset", optionsLabel: "Cor com defeito", options: ["Preto", "Amarelo", "Vermelho", "Azul"] },
   { key: "reset", label: "Reset", group: "Manutenção e reset" },
-  { key: "troca-bulk-ink", label: "Troca do bulk ink", group: "Tintas e abastecimento", optionsLabel: "Cor", options: ["Preto", "Amarelo", "Vermelho", "Azul"] },
+  { key: "troca-bulk-ink", label: "Troca do Bulking", group: "Tintas e abastecimento", optionsLabel: "Cor", options: ["Preto", "Amarelo", "Vermelho", "Azul"] },
+  { key: "troca-dump", label: "Troca de dump", group: "Tintas e abastecimento", optionsLabel: "Cor", options: ["Preto", "Amarelo", "Vermelho", "Azul"] },
   { key: "tinta", label: "Tinta", group: "Tintas e abastecimento", optionsLabel: "Tipo de tinta", options: ["X-FULL", "PREMIUM"] },
   { key: "troca-tinta", label: "Troca da tinta", group: "Tintas e abastecimento", optionsLabel: "Cor", options: ["Preto", "Amarelo", "Vermelho", "Azul"] },
   { key: "troca-carcaca", label: "Troca da carcaça", group: "Peças e componentes" },
+  { key: "troca-lixeira", label: "Troca da lixeira", group: "Peças e componentes" },
+  { key: "troca-bomba", label: "Troca da bomba", group: "Peças e componentes" },
+  { key: "revisao", label: "Revisão", group: "Peças e componentes", optionsLabel: "Serviços", options: ["Raspagem da bomba", "Limpeza da fita", "Limpeza do disco", "Lubrificação"] },
   { key: "troca-painel", label: "Troca do painel", group: "Peças e componentes" },
   { key: "troca-placa", label: "Troca da placa", group: "Peças e componentes" },
   { key: "borracha-cima", label: "Borracha de cima", group: "Peças e componentes" },
@@ -274,7 +278,8 @@ const printerProcedureDefinitions = [
   { key: "troca-fonte", label: "Troca da fonte", group: "Peças e componentes" },
   { key: "motor-carrinho", label: "Troca do motor do carrinho", group: "Peças e componentes" },
   { key: "troca-fita", label: "Troca da fita", group: "Peças e componentes" },
-  { key: "troca-wifi", label: "Troca do Wi-Fi", group: "Peças e componentes" }
+  { key: "troca-wifi", label: "Troca do Wi-Fi", group: "Peças e componentes" },
+  { key: "troca-scanner", label: "Troca do Scanner", group: "Peças e componentes" }
 ];
 
 const printerForm = document.getElementById("printer-form");
@@ -298,6 +303,10 @@ if (printerForm) {
   const printerResetPreview = document.getElementById("printer-reset-preview");
   const printerResetPreviewImage = document.getElementById("printer-reset-image");
   const removePrinterResetButton = document.getElementById("remove-printer-reset");
+  const machineCleaningPhotoInput = document.getElementById("machine-cleaning-photo-upload");
+  const machineCleaningPhotoPreview = document.getElementById("machine-cleaning-photo-preview");
+  const machineCleaningPhotoPreviewImage = document.getElementById("machine-cleaning-photo-image");
+  const removeMachineCleaningPhotoButton = document.getElementById("remove-machine-cleaning-photo");
   const recordStorageKey = "ic-printer-service-records";
   const legacyStorageKey = "ic-printer-service-record";
   const savedPrinterList = document.getElementById("saved-printer-list");
@@ -319,16 +328,20 @@ if (printerForm) {
   let pendingTestPage = null;
   let pendingPrinterPhoto = null;
   let pendingPrinterReset = null;
+  let pendingMachineCleaningPhoto = null;
   let previewUrl = "";
   let printerPhotoPreviewUrl = "";
   let printerResetPreviewUrl = "";
+  let machineCleaningPhotoPreviewUrl = "";
   let detailTestPageUrl = "";
   let detailPrinterPhotoUrl = "";
   let detailPrinterResetUrl = "";
+  let detailMachineCleaningPhotoUrl = "";
   let photoViewerUrl = "";
   let currentDetailTestPage = null;
   let currentDetailPrinterPhoto = null;
   let currentDetailPrinterReset = null;
+  let currentDetailMachineCleaningPhoto = null;
   let savedCardImageUrls = [];
 
   modelSelect.addEventListener("change", () => {
@@ -355,7 +368,7 @@ if (printerForm) {
     } else {
       checkbox.dataset.procedureDone = definition.key;
     }
-    if (option && definition.optionsLabel === "Cor") {
+    if (option && definition.optionsLabel.startsWith("Cor")) {
       label.dataset.inkColor = option.toLowerCase();
     }
     const text = document.createElement("span");
@@ -546,6 +559,17 @@ if (printerForm) {
     });
   };
 
+  const releaseMachineCleaningPhotoPreviewUrl = () => {
+    if (machineCleaningPhotoPreviewUrl) URL.revokeObjectURL(machineCleaningPhotoPreviewUrl);
+    machineCleaningPhotoPreviewUrl = "";
+  };
+
+  const showMachineCleaningPhotoPreview = blob => {
+    showImagePreview(blob, machineCleaningPhotoPreview, machineCleaningPhotoPreviewImage, releaseMachineCleaningPhotoPreviewUrl, url => {
+      machineCleaningPhotoPreviewUrl = url;
+    });
+  };
+
   const openTestPageDatabase = () => new Promise((resolve, reject) => {
     if (!window.indexedDB) {
       reject(new Error("Este navegador não oferece armazenamento local para a imagem."));
@@ -593,15 +617,43 @@ if (printerForm) {
   };
 
   const loadRecordImages = async record => {
-    const [printerPhoto, testPage, printerReset, legacyTestPage] = await Promise.all([
+    const [printerPhoto, testPage, printerReset, machineCleaningPhoto, legacyTestPage] = await Promise.all([
       loadUpload(`${record.id}:printer-photo`),
       loadUpload(`${record.id}:test-page`),
       loadUpload(`${record.id}:printer-reset`),
+      loadUpload(`${record.id}:machine-cleaning-photo`),
+      loadUpload(record.id)
+    ]);
+    const resolveImage = async (type, image) => {
+      if (image || !window.icFirebaseSync) return image;
+      const cloudImage = await window.icFirebaseSync.loadImage(record.id, type);
+      if (cloudImage) await storeUpload(`${record.id}:${type}`, cloudImage);
+      return cloudImage;
+    };
+    const resolvedPrinterPhoto = await resolveImage("printer-photo", printerPhoto);
+    const resolvedTestPage = await resolveImage("test-page", testPage || legacyTestPage);
+    const resolvedPrinterReset = await resolveImage("printer-reset", printerReset);
+    const resolvedMachineCleaningPhoto = await resolveImage("machine-cleaning-photo", machineCleaningPhoto);
+    return {
+      printerPhoto: resolvedPrinterPhoto,
+      printerReset: resolvedPrinterReset,
+      machineCleaningPhoto: resolvedMachineCleaningPhoto,
+      testPage: resolvedTestPage || (record.legacyTestPage ? await loadUpload("test-page") : null)
+    };
+  };
+
+  const loadLocalRecordImages = async record => {
+    const [printerPhoto, testPage, printerReset, machineCleaningPhoto, legacyTestPage] = await Promise.all([
+      loadUpload(`${record.id}:printer-photo`),
+      loadUpload(`${record.id}:test-page`),
+      loadUpload(`${record.id}:printer-reset`),
+      loadUpload(`${record.id}:machine-cleaning-photo`),
       loadUpload(record.id)
     ]);
     return {
       printerPhoto,
       printerReset,
+      machineCleaningPhoto,
       testPage: testPage || legacyTestPage || (record.legacyTestPage ? await loadUpload("test-page") : null)
     };
   };
@@ -640,6 +692,214 @@ if (printerForm) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "Data indisponível";
     return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(date);
+  };
+
+  const appendPrintField = (container, label, value) => {
+    const field = document.createElement("div");
+    field.className = "record-print-field";
+    const term = document.createElement("span");
+    term.textContent = label;
+    const description = document.createElement("strong");
+    description.textContent = value || "Não informado";
+    field.append(term, description);
+    container.appendChild(field);
+  };
+
+  const blobToDataUrl = blob => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error("Não foi possível preparar uma foto para o PDF."));
+    reader.readAsDataURL(blob);
+  });
+
+  const encodeTextBase64 = value => {
+    const bytes = new TextEncoder().encode(value);
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return btoa(binary);
+  };
+
+  const decodeTextBase64 = value => {
+    const binary = atob(value);
+    const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  };
+
+  const preparePdfImage = async blob => {
+    let bitmap;
+    try {
+      bitmap = await createImageBitmap(blob);
+      let scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+      const qualities = [0.76, 0.62, 0.48, 0.34];
+      while (scale >= 0.2) {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Não foi possível preparar uma foto para o PDF.");
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        for (const quality of qualities) {
+          const compressed = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", quality));
+          if (compressed && compressed.size <= 260000) return await blobToDataUrl(compressed);
+        }
+        scale *= 0.75;
+      }
+      throw new Error("Não foi possível reduzir uma foto o suficiente para incluir no PDF.");
+    } finally {
+      bitmap?.close();
+    }
+  };
+
+  const downloadRecordPdf = async (record, button) => {
+    button.disabled = true;
+    const originalLabel = button.textContent;
+    button.textContent = "Preparando PDF...";
+    let printRoot;
+    let imageUrls = [];
+    let previousTitle = document.title;
+    const cleanup = () => {
+      document.body.classList.remove("printing-record");
+      if (printRoot?.isConnected) printRoot.remove();
+      imageUrls.forEach(url => URL.revokeObjectURL(url));
+      imageUrls = [];
+      document.title = previousTitle;
+      window.removeEventListener("afterprint", cleanup);
+    };
+
+    try {
+      const images = await loadRecordImages(record);
+      const photoData = {};
+      for (const [type, image] of Object.entries(images)) {
+        if (image) photoData[type] = await preparePdfImage(image);
+      }
+      const importableRecord = {
+        ...record,
+        procedure: typeof record.procedure === "string" ? record.procedure : "",
+        procedures: record.procedures && typeof record.procedures === "object" && !Array.isArray(record.procedures)
+          ? record.procedures
+          : {}
+      };
+      const importPayload = encodeTextBase64(JSON.stringify({
+        format: "ic-impressoras-record",
+        version: 1,
+        record: importableRecord,
+        photos: photoData
+      }));
+      printRoot = document.createElement("main");
+      printRoot.className = "record-print-document";
+
+      const header = document.createElement("header");
+      header.className = "record-print-header";
+      const brand = document.createElement("span");
+      brand.className = "record-print-brand";
+      brand.textContent = "IC IMPRESSORAS & CIA";
+      const title = document.createElement("h1");
+      title.textContent = "Ficha de serviço técnico";
+      const savedDate = document.createElement("p");
+      savedDate.textContent = `Salvo em ${formatSavedDate(record.savedAt)}`;
+      header.append(brand, title, savedDate);
+      printRoot.appendChild(header);
+
+      const dataSection = document.createElement("section");
+      dataSection.className = "record-print-section";
+      const dataTitle = document.createElement("h2");
+      dataTitle.textContent = "Dados do atendimento";
+      const dataGrid = document.createElement("div");
+      dataGrid.className = "record-print-grid";
+      appendPrintField(dataGrid, "Cliente", record.name);
+      appendPrintField(dataGrid, "Marca", record.brand);
+      appendPrintField(dataGrid, "Modelo", record.model);
+      appendPrintField(dataGrid, "Progresso do reset", `${Number(record.reset) || 0}%`);
+      dataSection.append(dataTitle, dataGrid);
+      printRoot.appendChild(dataSection);
+
+      const descriptionSection = document.createElement("section");
+      descriptionSection.className = "record-print-section";
+      const descriptionTitle = document.createElement("h2");
+      descriptionTitle.textContent = "Procedimento realizado";
+      const description = document.createElement("p");
+      description.className = "record-print-description";
+      description.textContent = record.procedure || "Nenhuma descrição informada.";
+      descriptionSection.append(descriptionTitle, description);
+      printRoot.appendChild(descriptionSection);
+
+      const procedureSection = document.createElement("section");
+      procedureSection.className = "record-print-section";
+      const procedureTitle = document.createElement("h2");
+      procedureTitle.textContent = "Procedimentos da ficha";
+      const procedureList = document.createElement("ul");
+      procedureList.className = "record-print-procedures";
+      const selectedProcedures = selectedProcedureEntries(record.procedures);
+      if (selectedProcedures.length) {
+        selectedProcedures.forEach(entry => {
+          const item = document.createElement("li");
+          const label = document.createElement("strong");
+          label.textContent = entry.label;
+          const details = document.createElement("span");
+          details.textContent = entry.details;
+          item.append(label, details);
+          procedureList.appendChild(item);
+        });
+      } else {
+        const item = document.createElement("li");
+        item.textContent = "Nenhum procedimento marcado.";
+        procedureList.appendChild(item);
+      }
+      procedureSection.append(procedureTitle, procedureList);
+      printRoot.appendChild(procedureSection);
+
+      const photoEntries = [
+        { image: images.printerPhoto, label: "Foto da impressora" },
+        { image: images.testPage, label: "Página de teste" },
+        { image: images.printerReset, label: "Foto do reset" },
+        { image: images.machineCleaningPhoto, label: "Condição da máquina ao chegar" }
+      ].filter(entry => entry.image);
+      if (photoEntries.length) {
+        const photoSection = document.createElement("section");
+        photoSection.className = "record-print-section";
+        const photoTitle = document.createElement("h2");
+        photoTitle.textContent = "Fotos do atendimento";
+        const photoGrid = document.createElement("div");
+        photoGrid.className = "record-print-photos";
+        photoEntries.forEach(({ image, label }) => {
+          const figure = document.createElement("figure");
+          const imageUrl = URL.createObjectURL(image);
+          imageUrls.push(imageUrl);
+          const photo = document.createElement("img");
+          photo.src = imageUrl;
+          photo.alt = label;
+          const caption = document.createElement("figcaption");
+          caption.textContent = label;
+          figure.append(photo, caption);
+          photoGrid.appendChild(figure);
+        });
+        photoSection.append(photoTitle, photoGrid);
+        printRoot.appendChild(photoSection);
+      }
+
+      const importData = document.createElement("span");
+      importData.className = "record-print-import-data";
+      const wrappedImportPayload = importPayload.match(/.{1,2048}/g)?.join("\n") || "";
+      importData.textContent = `ICFICHEV1BEGIN${wrappedImportPayload}ICFICHEV1END`;
+      printRoot.appendChild(importData);
+      document.body.appendChild(printRoot);
+      await Promise.all([...printRoot.querySelectorAll("img")].map(image => image.decode()));
+      previousTitle = document.title;
+      document.title = `Ficha - ${String(record.name || "Atendimento").replace(/[\\/:*?"<>|]/g, "-")}`;
+      window.addEventListener("afterprint", cleanup, { once: true });
+      document.body.classList.add("printing-record");
+      button.textContent = "Salvar como PDF...";
+      window.print();
+      setFeedback("Na janela de impressão, escolha “Salvar como PDF” para baixar esta ficha.");
+    } catch (error) {
+      cleanup();
+      setFeedback(`Não foi possível preparar o PDF: ${error.message}`, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
   };
 
   const renderSavedRecords = async () => {
@@ -688,7 +948,52 @@ if (printerForm) {
         editButton.type = "button";
         editButton.textContent = "Editar ficha";
         editButton.addEventListener("click", () => startEditingRecord(record));
-        actions.appendChild(editButton);
+        const pdfButton = document.createElement("button");
+        pdfButton.className = "saved-printer-edit saved-printer-pdf";
+        pdfButton.type = "button";
+        pdfButton.textContent = "Baixar PDF";
+        pdfButton.addEventListener("click", () => downloadRecordPdf(record, pdfButton));
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "saved-printer-delete";
+        deleteButton.type = "button";
+        deleteButton.textContent = "×";
+        deleteButton.setAttribute("aria-label", `Excluir ficha de ${record.name}`);
+        deleteButton.title = "Excluir ficha";
+        deleteButton.addEventListener("click", async () => {
+          const password = window.prompt("Digite a senha para excluir esta ficha:");
+          if (password === null) return;
+          if (password !== "2020") {
+            setFeedback("Senha incorreta. A ficha não foi excluída.", true);
+            return;
+          }
+          if (!window.confirm(`Deseja excluir a ficha de ${record.name}? Esta ação não pode ser desfeita.`)) return;
+
+          deleteButton.disabled = true;
+          try {
+            if (window.icFirebaseSync) await window.icFirebaseSync.deleteRecord(record.id);
+            const remainingRecords = getSavedRecords().filter(saved => saved.id !== record.id);
+            localStorage.setItem(recordStorageKey, JSON.stringify(remainingRecords));
+            if (editingRecordId === record.id) resetEditingState();
+            await renderSavedRecords();
+            const uploadTypes = ["printer-photo", "test-page", "printer-reset", "machine-cleaning-photo"];
+            const cleanupResults = await Promise.allSettled([
+              ...uploadTypes.map(type => deleteUpload(`${record.id}:${type}`)),
+              deleteUpload(record.id)
+            ]);
+            const cleanupError = cleanupResults.find(result => result.status === "rejected");
+            if (cleanupError) {
+              setFeedback(`Ficha excluída, mas não foi possível limpar todas as fotos locais: ${cleanupError.reason.message}`, true);
+            } else {
+              setFeedback(window.icFirebaseSync
+                ? "Ficha excluída deste aparelho e da nuvem."
+                : "Ficha excluída deste aparelho.");
+            }
+          } catch (error) {
+            setFeedback(`Não foi possível concluir a exclusão: ${error.message}`, true);
+            deleteButton.disabled = false;
+          }
+        });
+        actions.append(editButton, pdfButton, deleteButton);
         card.appendChild(actions);
 
         try {
@@ -698,7 +1003,8 @@ if (printerForm) {
           [
             { image: images.printerPhoto, label: "Foto da impressora" },
             { image: images.testPage, label: "Foto da página de teste" },
-            { image: images.printerReset, label: "Reset da impressora" }
+            { image: images.printerReset, label: "Reset da impressora" },
+            { image: images.machineCleaningPhoto, label: "Foto da limpeza da máquina" }
           ].forEach(({ image, label }) => {
             if (!image) return;
             const photoButton = document.createElement("button");
@@ -727,6 +1033,125 @@ if (printerForm) {
     }
   };
 
+  window.icPrinterRecords = {
+    readLocalRecords: getSavedRecords,
+    loadRecordImages,
+    loadLocalRecordImages,
+    importRecord: async (record, images) => {
+      const records = getSavedRecords();
+      const existingIndex = records.findIndex(saved => saved.id === record.id);
+      if (existingIndex >= 0 && !window.confirm("Já existe uma ficha com este código. Deseja substituir a ficha salva?")) {
+        return false;
+      }
+
+      const importedRecord = { ...record };
+      const photoTypes = ["printer-photo", "test-page", "printer-reset", "machine-cleaning-photo"];
+      for (const type of photoTypes) {
+        if (images[type]) await storeUpload(`${importedRecord.id}:${type}`, images[type]);
+        else if (existingIndex >= 0) await deleteUpload(`${importedRecord.id}:${type}`);
+      }
+      if (existingIndex >= 0) records[existingIndex] = importedRecord;
+      else records.push(importedRecord);
+      localStorage.setItem(recordStorageKey, JSON.stringify(records));
+      await renderSavedRecords();
+
+      if (!window.icFirebaseSync) {
+        return { synced: false, error: new Error("A conexão com a nuvem não foi iniciada.") };
+      }
+      try {
+        await window.icFirebaseSync.saveRecord(importedRecord, images, photoTypes);
+        return { synced: true };
+      } catch (error) {
+        return { synced: false, error };
+      }
+    },
+    applyCloudRecords: async cloudRecords => {
+      const merged = new Map(getSavedRecords().map(record => [record.id, record]));
+      cloudRecords.forEach(record => merged.set(record.id, record));
+      localStorage.setItem(recordStorageKey, JSON.stringify([...merged.values()]));
+      await renderSavedRecords();
+    }
+  };
+
+  const importPdfButton = document.getElementById("import-record-pdf");
+  const importPdfInput = document.getElementById("import-record-pdf-file");
+  if (importPdfButton && importPdfInput) {
+    importPdfButton.addEventListener("click", () => importPdfInput.click());
+    importPdfInput.addEventListener("change", async () => {
+      const file = importPdfInput.files?.[0];
+      importPdfInput.value = "";
+      if (!file) return;
+      importPdfButton.disabled = true;
+      const originalLabel = importPdfButton.textContent;
+      importPdfButton.textContent = "Importando...";
+      try {
+        if (file.size > 20 * 1024 * 1024) throw new Error("O PDF deve ter no máximo 20 MB.");
+        if (!window.pdfjsLib) throw new Error("O leitor de PDF não carregou. Verifique a conexão e tente novamente.");
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+        if (pdf.numPages > 40) throw new Error("Este PDF tem páginas demais para importar.");
+        const pageText = [];
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+          const page = await pdf.getPage(pageNumber);
+          const content = await page.getTextContent();
+          pageText.push(content.items.map(item => item.str || "").join(""));
+        }
+        const text = pageText.join("").replace(/\s+/g, "");
+        const match = text.match(/ICFICHEV1BEGIN([A-Za-z0-9+/=]+)ICFICHEV1END/);
+        if (!match) {
+          throw new Error("Este PDF não contém dados importáveis. Importe um PDF baixado novamente do site após esta atualização.");
+        }
+        const payload = JSON.parse(decodeTextBase64(match[1]));
+        if (payload.format !== "ic-impressoras-record" || payload.version !== 1) {
+          throw new Error("A versão dos dados deste PDF não é compatível.");
+        }
+        const record = payload.record;
+        if (!record
+          || typeof record.id !== "string"
+          || !/^[A-Za-z0-9_-]{1,128}$/.test(record.id)
+          || typeof record.name !== "string"
+          || !record.name.trim()
+          || record.name.length > 200
+          || (record.procedure != null && (typeof record.procedure !== "string" || record.procedure.length > 10000))
+          || (record.procedures != null
+            && (typeof record.procedures !== "object" || Array.isArray(record.procedures)))) {
+          throw new Error("O PDF não contém uma ficha válida.");
+        }
+        record.procedure = record.procedure || "";
+        record.procedures = record.procedures || {};
+        const allowedPhotoTypes = ["printer-photo", "test-page", "printer-reset", "machine-cleaning-photo"];
+        const photoData = payload.photos || {};
+        if (typeof photoData !== "object" || Array.isArray(photoData)) {
+          throw new Error("O PDF contém dados de fotos inválidos.");
+        }
+        const images = Object.fromEntries(allowedPhotoTypes.map(type => [type, null]));
+        for (const [type, dataUrl] of Object.entries(photoData)) {
+          if (!allowedPhotoTypes.includes(type) || typeof dataUrl !== "string" || dataUrl.length > 500000) {
+            throw new Error("O PDF contém dados de foto inválidos ou acima do limite.");
+          }
+          const imageMatch = dataUrl.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/i);
+          if (!imageMatch) throw new Error("Uma das fotos do PDF tem formato inválido.");
+          const binary = atob(imageMatch[2]);
+          const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+          images[type] = new Blob([bytes], { type: `image/${imageMatch[1].toLowerCase()}` });
+        }
+        const imported = await window.icPrinterRecords.importRecord(record, images);
+        if (imported === false) return;
+        if (imported.synced) {
+          setFeedback("Ficha completa importada, com fotos e procedimentos, e sincronizada.");
+        } else {
+          setFeedback(`Ficha importada e salva neste aparelho, mas não sincronizada: ${imported.error.message}`, true);
+        }
+      } catch (error) {
+        setFeedback(`Não foi possível importar a ficha: ${error.message}`, true);
+      } finally {
+        importPdfButton.disabled = false;
+        importPdfButton.textContent = originalLabel;
+      }
+    });
+  }
+
   const openRecordDetails = async record => {
     document.getElementById("detail-printer-name").textContent = record.name || "—";
     document.getElementById("detail-printer-model").textContent = record.model || "—";
@@ -741,21 +1166,32 @@ if (printerForm) {
     const detailPrinterPhotoImage = document.getElementById("detail-printer-photo-image");
     const detailPrinterReset = document.getElementById("detail-reset-photo");
     const detailPrinterResetImage = document.getElementById("detail-printer-reset-image");
+    const detailMachineCleaningPhoto = document.getElementById("detail-machine-cleaning-photo");
+    const detailMachineCleaningPhotoImage = document.getElementById("detail-machine-cleaning-photo-image");
     if (detailTestPageUrl) URL.revokeObjectURL(detailTestPageUrl);
     if (detailPrinterPhotoUrl) URL.revokeObjectURL(detailPrinterPhotoUrl);
     if (detailPrinterResetUrl) URL.revokeObjectURL(detailPrinterResetUrl);
+    if (detailMachineCleaningPhotoUrl) URL.revokeObjectURL(detailMachineCleaningPhotoUrl);
     detailTestPageUrl = "";
     detailPrinterPhotoUrl = "";
     detailPrinterResetUrl = "";
+    detailMachineCleaningPhotoUrl = "";
     detailTestPage.hidden = true;
     detailPrinterPhoto.hidden = true;
     detailPrinterReset.hidden = true;
+    detailMachineCleaningPhoto.hidden = true;
     detailsDialog.showModal();
     try {
-      const { printerPhoto: savedPrinterPhoto, testPage: savedTestPage, printerReset: savedPrinterReset } = await loadRecordImages(record);
+      const {
+        printerPhoto: savedPrinterPhoto,
+        testPage: savedTestPage,
+        printerReset: savedPrinterReset,
+        machineCleaningPhoto: savedMachineCleaningPhoto
+      } = await loadRecordImages(record);
       currentDetailPrinterPhoto = savedPrinterPhoto;
       currentDetailTestPage = savedTestPage;
       currentDetailPrinterReset = savedPrinterReset;
+      currentDetailMachineCleaningPhoto = savedMachineCleaningPhoto;
       if (savedPrinterPhoto) {
         detailPrinterPhotoUrl = URL.createObjectURL(savedPrinterPhoto);
         detailPrinterPhotoImage.src = detailPrinterPhotoUrl;
@@ -771,6 +1207,11 @@ if (printerForm) {
         detailPrinterResetImage.src = detailPrinterResetUrl;
         detailPrinterReset.hidden = false;
       }
+      if (savedMachineCleaningPhoto) {
+        detailMachineCleaningPhotoUrl = URL.createObjectURL(savedMachineCleaningPhoto);
+        detailMachineCleaningPhotoImage.src = detailMachineCleaningPhotoUrl;
+        detailMachineCleaningPhoto.hidden = false;
+      }
     } catch (error) {
       setFeedback(`A ficha abriu, mas não foi possível carregar uma das imagens: ${error.message}`, true);
     }
@@ -782,11 +1223,13 @@ if (printerForm) {
     pendingTestPage = null;
     pendingPrinterPhoto = null;
     pendingPrinterReset = null;
+    pendingMachineCleaningPhoto = null;
     HTMLFormElement.prototype.reset.call(printerForm);
-    [uploadInput, printerPhotoInput, printerResetInput].forEach(input => { input.value = ""; });
+    [uploadInput, printerPhotoInput, printerResetInput, machineCleaningPhotoInput].forEach(input => { input.value = ""; });
     showTestPagePreview(null);
     showPrinterPhotoPreview(null);
     showPrinterResetPreview(null);
+    showMachineCleaningPhotoPreview(null);
     resetValue.value = "0%";
     modelOtherField.hidden = true;
     modelOtherInput.disabled = true;
@@ -806,6 +1249,7 @@ if (printerForm) {
     pendingTestPage = null;
     pendingPrinterPhoto = null;
     pendingPrinterReset = null;
+    pendingMachineCleaningPhoto = null;
     printerForm.elements.name.value = record.name || "";
     printerForm.elements.procedure.value = record.procedure || "";
     resetInput.value = String(Number(record.reset) || 0);
@@ -838,6 +1282,7 @@ if (printerForm) {
       showPrinterPhotoPreview(images.printerPhoto);
       showTestPagePreview(images.testPage);
       showPrinterResetPreview(images.printerReset);
+      showMachineCleaningPhotoPreview(images.machineCleaningPhoto);
     } catch (error) {
       setFeedback(`A ficha foi carregada, mas não foi possível exibir as fotos: ${error.message}`, true);
     }
@@ -848,12 +1293,13 @@ if (printerForm) {
   document.querySelectorAll("[data-close-details]").forEach(button => {
     button.addEventListener("click", () => detailsDialog.close());
   });
-  document.querySelectorAll("#detail-printer-photo-image, #detail-test-page-image, #detail-printer-reset-image").forEach(image => {
+  document.querySelectorAll("#detail-printer-photo-image, #detail-test-page-image, #detail-printer-reset-image, #detail-machine-cleaning-photo-image").forEach(image => {
     image.addEventListener("click", () => {
       const photoDetails = {
         "detail-printer-photo-image": [currentDetailPrinterPhoto, "Foto da impressora"],
         "detail-test-page-image": [currentDetailTestPage, "Foto da página de teste"],
-        "detail-printer-reset-image": [currentDetailPrinterReset, "Reset da impressora"]
+        "detail-printer-reset-image": [currentDetailPrinterReset, "Reset da impressora"],
+        "detail-machine-cleaning-photo-image": [currentDetailMachineCleaningPhoto, "Foto da limpeza da máquina"]
       };
       const [photo, title] = photoDetails[image.id];
       if (photo) openPhotoViewer(photo, title);
@@ -866,15 +1312,19 @@ if (printerForm) {
     if (detailTestPageUrl) URL.revokeObjectURL(detailTestPageUrl);
     if (detailPrinterPhotoUrl) URL.revokeObjectURL(detailPrinterPhotoUrl);
     if (detailPrinterResetUrl) URL.revokeObjectURL(detailPrinterResetUrl);
+    if (detailMachineCleaningPhotoUrl) URL.revokeObjectURL(detailMachineCleaningPhotoUrl);
     detailTestPageUrl = "";
     detailPrinterPhotoUrl = "";
     detailPrinterResetUrl = "";
+    detailMachineCleaningPhotoUrl = "";
     currentDetailTestPage = null;
     currentDetailPrinterPhoto = null;
     currentDetailPrinterReset = null;
+    currentDetailMachineCleaningPhoto = null;
     document.getElementById("detail-test-page-image").removeAttribute("src");
     document.getElementById("detail-printer-photo-image").removeAttribute("src");
     document.getElementById("detail-printer-reset-image").removeAttribute("src");
+    document.getElementById("detail-machine-cleaning-photo-image").removeAttribute("src");
   });
   document.querySelectorAll("[data-close-photo-viewer]").forEach(button => {
     button.addEventListener("click", () => photoViewerDialog.close());
@@ -942,6 +1392,12 @@ if (printerForm) {
       removedImages.delete("printer-reset");
     }, showPrinterResetPreview);
   });
+  machineCleaningPhotoInput.addEventListener("change", () => {
+    handleImageUpload(machineCleaningPhotoInput, file => {
+      pendingMachineCleaningPhoto = file;
+      removedImages.delete("machine-cleaning-photo");
+    }, showMachineCleaningPhotoPreview);
+  });
   removeImageButton.addEventListener("click", () => {
     pendingTestPage = null;
     uploadInput.value = "";
@@ -962,6 +1418,13 @@ if (printerForm) {
     if (editingRecordId) removedImages.add("printer-reset");
     showPrinterResetPreview(null);
     setFeedback(editingRecordId ? "Foto será removida ao salvar as alterações." : "Foto do reset removida da nova ficha.");
+  });
+  removeMachineCleaningPhotoButton.addEventListener("click", () => {
+    pendingMachineCleaningPhoto = null;
+    machineCleaningPhotoInput.value = "";
+    if (editingRecordId) removedImages.add("machine-cleaning-photo");
+    showMachineCleaningPhotoPreview(null);
+    setFeedback(editingRecordId ? "Foto da limpeza será removida ao salvar as alterações." : "Foto da limpeza removida da nova ficha.");
   });
   printerForm.addEventListener("submit", async event => {
     event.preventDefault();
@@ -992,7 +1455,8 @@ if (printerForm) {
     const uploads = [
       ["printer-photo", pendingPrinterPhoto],
       ["test-page", pendingTestPage],
-      ["printer-reset", pendingPrinterReset]
+      ["printer-reset", pendingPrinterReset],
+      ["machine-cleaning-photo", pendingMachineCleaningPhoto]
     ];
     try {
       for (const [type, image] of uploads) {
@@ -1015,6 +1479,7 @@ if (printerForm) {
     try {
       if (removedImages.has("printer-photo")) await deleteUpload(`${record.id}:printer-photo`);
       if (removedImages.has("printer-reset")) await deleteUpload(`${record.id}:printer-reset`);
+      if (removedImages.has("machine-cleaning-photo")) await deleteUpload(`${record.id}:machine-cleaning-photo`);
       if (removedImages.has("test-page")) {
         await deleteUpload(`${record.id}:test-page`);
         await deleteUpload(record.id);
@@ -1031,11 +1496,27 @@ if (printerForm) {
       setFeedback(`Ficha salva, mas não foi possível remover uma imagem: ${error.message}`, true);
       return;
     }
+    const removedImagesToSync = [...removedImages];
+    if (!window.icFirebaseSync) {
+      renderSavedRecords();
+      resetEditingState();
+      setFeedback("Ficha salva neste aparelho, mas a conexão segura com a nuvem não foi iniciada.", true);
+      return;
+    }
+    try {
+      const images = await loadLocalRecordImages(record);
+      await window.icFirebaseSync.saveRecord(record, images, removedImagesToSync);
+    } catch (error) {
+      renderSavedRecords();
+      resetEditingState();
+      setFeedback(`Ficha salva neste aparelho, mas não sincronizou: ${error.message}`, true);
+      return;
+    }
     renderSavedRecords();
     resetEditingState();
     setFeedback(existingRecord
-      ? "Ficha atualizada com sucesso neste navegador e endereço."
-      : "Procedimento salvo neste navegador e endereço e adicionado ao histórico.");
+      ? "Ficha atualizada e sincronizada com os outros celulares."
+      : "Procedimento salvo e sincronizado com os outros celulares.");
   });
 }
 
